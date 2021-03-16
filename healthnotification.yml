@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  HookURL:
+    Type: String
+    Description: "Please enter the web hook url from Slack"
+  Email:
+    Type: String
+    Description: "Please enter the email address that will receive the Health notification"
+  S3Bucket:
+    Type: String
+    Description: "Please enter the the S3 where the lambda function is stored"
+  S3Key:
+    Type: String
+    Description: "Please enter the name of the zipped lambda function"
+Resources:
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: sns_publish
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref SNSTopic
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  SlackNotifierLambdaFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: slacklambda.lambda_handler
+      Role: !GetAtt "LambdaFunctionRole.Arn"
+      Code:
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Key
+      Runtime: python3.8
+      Timeout: 60
+      Environment:
+        Variables:
+          TopicArn: !Ref SNSTopic
+          HookUrl: !Ref HookURL
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt "SlackNotifierLambdaFn.Arn"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt "CloudWatchEventRule.Arn"
+  CloudWatchEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: EventRule
+      EventPattern:
+        source:
+          - aws.health
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt "SlackNotifierLambdaFn.Arn"
+          Id: SlackNotifierLambdaFn
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AWS-Health-Notification
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref Email
+      Protocol: email
+      TopicArn: !Ref SNSTopic
