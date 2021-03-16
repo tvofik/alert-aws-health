@@ -12,6 +12,7 @@ Parameters:
   S3Key:
     Type: String
     Description: "Please enter the name of the zipped lambda function"
+    Default: healthnotification_lambda.zip
 Resources:
   LambdaFunctionRole:
     Type: AWS::IAM::Role
@@ -36,10 +37,10 @@ Resources:
                 Resource: !Ref SNSTopic
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-  SlackNotifierLambdaFn:
+  NotifierLambdaFn:
     Type: AWS::Lambda::Function
     Properties:
-      Handler: slacklambda.lambda_handler
+      Handler: healthnotification_lambda.lambda_handler
       Role: !GetAtt "LambdaFunctionRole.Arn"
       Code:
         S3Bucket: !Ref S3Bucket
@@ -53,7 +54,7 @@ Resources:
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt "SlackNotifierLambdaFn.Arn"
+      FunctionName: !GetAtt "NotifierLambdaFn.Arn"
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt "CloudWatchEventRule.Arn"
@@ -66,12 +67,13 @@ Resources:
           - aws.health
       State: ENABLED
       Targets:
-        - Arn: !GetAtt "SlackNotifierLambdaFn.Arn"
-          Id: SlackNotifierLambdaFn
+        - Arn: !GetAtt "NotifierLambdaFn.Arn"
+          Id: NotifierLambdaFn
   SNSTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: AWS-Health-Notification
+      DisplayName: AWS Health Notification
   EmailSubscription:
     Type: AWS::SNS::Subscription
     Properties:
