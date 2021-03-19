@@ -30,7 +30,7 @@ Resources:
   NotifierLambdaFn:
     Type: AWS::Lambda::Function
     Properties:
-      Handler: healthnotification_lambda.lambda_handler
+      Handler: index.lambda_handler
       Role: !GetAtt "LambdaFunctionRole.Arn"
       Code:
         ZipFile: |
