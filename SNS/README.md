@@ -1,5 +1,5 @@
 # alert-aws-health
-This is an automation notification tool for sending AWS Health Alerts to Slack and E-mail.
+This is an automation notification tool for sending AWS Health Alerts to E-mail.
 ###  Deployment
 1. In your AWS console go to CloudFormation
 2. Create a Stack with the `healthnofication_sns.yml` template
