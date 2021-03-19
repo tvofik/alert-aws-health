@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Email:
+    Type: String
+    Description: "Please enter the email address that will receive the Health notification"
+Resources:
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: sns_publish
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref SNSTopic
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  NotifierLambdaFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: healthnotification_lambda.lambda_handler
+      Role: !GetAtt "LambdaFunctionRole.Arn"
+      Code:
+        ZipFile: |
+          import urllib3
+          import json
+          import logging
+          import boto3
+          import os
+
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          http = urllib3.PoolManager()
+
+          topic_arn = os.environ['TopicArn']
+
+          def lambda_handler(event, context):
+              sns_client = boto3.client('sns')
+
+              category = event["detail"]["eventTypeCategory"]
+              service = event['detail']['service']
+              account = event['account']
+              region = event["region"]
+              start_time = event["detail"]["startTime"]
+              end_time = '-' if event['detail'].get(
+                  'endTime') == None else event['detail'].get('endTime')
+              eventcode = event["detail"]["eventTypeCode"]
+              description = event['detail']['eventDescription'][0]['latestDescription']
+              link = f"https://phd.aws.amazon.com/phd/home#/event-log?eventID={event['detail']['eventArn']}"
+              resources = ", ".join(event['resources']) if event['resources'] else '-'
+
+              try:
+                  message_subject = f'AWS Health Notification: {category} - {service}'
+                  message_body = f"Hello,\nAt {start_time}, there was a Health event with {service} service in AWS account {account}.\nRegion: {region}\nService: {service}\nCategory: {category}\nStart Time: {start_time}\nEnd Time: {end_time}\nEvent Code: {eventcode}\nMessage Description: {description}.\nAffected Resources: {resources}\nClick link for more details: {link}\n"
+                  logger.info({'subject': message_subject, 'body': message_body})
+                  sns_response = sns_client.publish(
+                      TopicArn=topic_arn, Message=message_body, Subject=message_subject)
+                  logger.info({'Message': 'Message sent to SNS topic...',
+                              'response': sns_response})
+              except Exception as e:
+                  logger.error(f"Exception: {e}")
+      Runtime: python3.8
+      Timeout: 60
+      Environment:
+        Variables:
+          TopicArn: !Ref SNSTopic
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt "NotifierLambdaFn.Arn"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt "CloudWatchEventRule.Arn"
+  CloudWatchEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: EventRule
+      EventPattern:
+        source:
+          - aws.health
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt "NotifierLambdaFn.Arn"
+          Id: NotifierLambdaFn
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AWS-Health-Notification
+      DisplayName: AWS Health Notification
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref Email
+      Protocol: email
+      TopicArn: !Ref SNSTopic
